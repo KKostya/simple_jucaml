@@ -1,0 +1,18 @@
+{
+    "protocol_version" : "5.0",
+    "ipython_version" : [1, 1, 0, ""],
+    "language_version" : [4, 0, 2],
+    "language" : "OCaml",
+    "banner" : "",
+    "implementation" : "Kostya",
+    "implementation_version" : "0.1",
+    "language_info": { 
+        "name" : "OCaml",
+        "version" : "4.02",
+        "mimetype" : "",
+        "file_extension": ".ml",
+        "pygments_lexer" : "OCaml",
+        "codemirror_mode" : "",
+        "nbconvert_exporter" : ""
+    } 
+}
