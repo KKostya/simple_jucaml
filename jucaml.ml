@@ -4,10 +4,12 @@ module JU = Yojson.Basic.Util
 module WireIO = struct
     type t = {
         key : Cstruct.t;
-        uuid: string
+        uuid: string;
+        kerneldir: string
     }
 
     let create key = { 
+        kerneldir  = Filename.dirname Sys.argv.(0);
         key  = Cstruct.of_string key; 
         uuid = Core.Uuid.(to_string @@ create ()) 
     }
@@ -38,7 +40,7 @@ module WireIO = struct
                 ("username" , `String "kernel");
                 ("session"  , `String t.uuid  );
                 ("msg_type" , `String htype   );
-                ("version"  , `String "0.1"   ) ]) 
+                ("version"  , `String "1.0"   ) ]) 
             in 
         { header; parent_header; content; metadata; extra }
 
@@ -68,7 +70,7 @@ let handler wireio iopub mtype  =
         msg.WireIO.content |> J.from_string |> JU.member key |> JU.to_string
         in
     let reply_kernel_info msg = 
-        J.to_string @@ J.from_file "./kernel_info.json" 
+        J.to_string @@ J.from_file ( Filename.concat wireio.WireIO.kerneldir "kernel_info.json")
         in
     let reply_comm msg = J.to_string @@ J.(`Assoc [
             ( "comm_id",     `String ( content msg "comm_id"     ) );
@@ -144,6 +146,9 @@ let () =
         |> List.iteri ( fun i socket -> match i, evts.(i) with
             | _ , None   -> ()
             | 1 , Some _ -> handle shell 
-            | n , Some _ -> () 
-        )
+            | n , Some _ -> begin
+                print_string ("Received event on socket #" ^ string_of_int i ^"\n");
+                ZMQ.Socket.recv_all socket |> String.concat "\n" |> print_string;
+                flush stdout
+            end )
     done
