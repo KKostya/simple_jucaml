@@ -1,6 +1,46 @@
 module J  = Yojson.Basic
 module JU = Yojson.Basic.Util
 
+
+module Exec = struct
+    let init () =
+        (* Next line forces loading of the Topdirs module and population of toplevel directives *)
+        try Topdirs.load_file Format.str_formatter "" |> ignore with _ -> ();
+        Compenv.readenv Format.std_formatter Before_args;
+        Compenv.readenv Format.std_formatter Before_link;
+        Toploop.set_paths ();
+        Toploop.initialize_toplevel_env ()
+
+    let std_intercept f = 
+        let open Unix in
+        let fd = openfile  "capture" [ O_RDWR; O_TRUNC; O_CREAT ] 0o600  in
+        let tmp = dup stdout in
+        dup2 fd stdout;
+        f ();
+        flush_all ();
+        dup2 tmp stdout;
+        let sz = (fstat fd).st_size in
+        let buffer = String.create sz in 
+        let _ = lseek fd 0 SEEK_SET in
+        let _ = read  fd buffer 0 sz in 
+        close fd;
+        buffer
+        
+    let exec code callback =
+        let lexbuf = Lexing.from_string code in
+        let phrases = !Toploop.parse_use_file lexbuf in
+        phrases |> List.map (fun phrase -> 
+            try 
+                let phrase = Toploop.preprocess_phrase Format.str_formatter phrase in
+                let exec () = Toploop.execute_phrase true Format.str_formatter phrase |> ignore in
+                let capture = std_intercept exec in
+                callback capture;
+                let reply = Format.flush_str_formatter () in
+                callback reply
+            with _ -> ()
+        ) |> ignore; 
+end 
+
 module WireIO = struct
     type t = {
         key : Cstruct.t;
@@ -69,6 +109,12 @@ let handler wireio iopub mtype  =
     let content msg key = 
         msg.WireIO.content |> J.from_string |> JU.member key |> JU.to_string
         in
+    let send_to_iopub msg reply =
+        let content = J.to_string @@ J.(`Assoc [ 
+            ("name", `String "stdout"); ("text", `String reply )]) in
+        let rmsg = WireIO.mk_message wireio "stream" msg.WireIO.header content in
+        WireIO.send_msg wireio iopub rmsg
+        in
     let reply_kernel_info msg = 
         J.to_string @@ J.from_file ( Filename.concat wireio.WireIO.kerneldir "kernel_info.json")
         in
@@ -80,18 +126,7 @@ let handler wireio iopub mtype  =
     let reply_execute msg =
         counter := !counter + 1;
         let code = content msg "code" in
-        let lexbuf = Lexing.from_string code in
-        let phrases = !Toploop.parse_use_file lexbuf in
-        phrases |> List.map (fun phrase -> 
-            try 
-                Toploop.execute_phrase true Format.str_formatter phrase |> ignore ;
-                let reply = Format.flush_str_formatter () in
-                let content = J.to_string @@ J.(`Assoc [ 
-                    ("name", `String "stdout"); ("text", `String reply )]) in
-                let rmsg = WireIO.mk_message wireio "stream" msg.WireIO.header content in
-                WireIO.send_msg wireio iopub rmsg
-            with _ -> ()
-        ) |> ignore; 
+        Exec.exec code @@ send_to_iopub msg ;
         J.to_string @@ J.( `Assoc [ 
             ( "status", `String "ok" ); 
             ( "execution_count", `Int  !counter  ) ]) 
@@ -110,7 +145,7 @@ let handle wireio iopub socket =
     WireIO.send_msg wireio socket ~zmqids:zmqids rmsg
 
 let () =
-    Toploop.initialize_toplevel_env ();
+    Exec.init ();
 
     (* Processing Jupyter-kernel settings file *)
     let filename = Sys.argv.(1) in
