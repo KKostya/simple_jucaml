@@ -14,11 +14,13 @@ module Exec = struct
     let std_intercept f = 
         let open Unix in
         let fd = openfile  "capture" [ O_RDWR; O_TRUNC; O_CREAT ] 0o600  in
-        let tmp = dup stdout in
+        let tmp_cout, tmp_cerr = dup stdout, dup stderr in
         dup2 fd stdout;
+        dup2 fd stderr;
         f ();
         flush_all ();
-        dup2 tmp stdout;
+        dup2 tmp_cout stdout;
+        dup2 tmp_cerr stderr;
         let sz = (fstat fd).st_size in
         let buffer = String.create sz in 
         let _ = lseek fd 0 SEEK_SET in
