@@ -11,32 +11,36 @@ module Exec = struct
         Toploop.set_paths ();
         Toploop.initialize_toplevel_env ()
 
-    let std_intercept f = 
+    let std_intercept (f: unit -> 'a ) (cb: string -> unit) : 'a = 
         let open Unix in
         let fd = openfile  "capture" [ O_RDWR; O_TRUNC; O_CREAT ] 0o600  in
         let tmp_cout, tmp_cerr = dup stdout, dup stderr in
         dup2 fd stdout;
         dup2 fd stderr;
-        f ();
-        flush_all ();
-        dup2 tmp_cout stdout;
-        dup2 tmp_cerr stderr;
+        let reset () =
+            flush_all ();
+            dup2 tmp_cout stdout;
+            dup2 tmp_cerr stderr
+            in
+        let result = (try f () with ex -> (reset (); close fd; raise ex)) in
+        reset ();
         let sz = (fstat fd).st_size in
+        if sz = 0 then result else
         let buffer = String.create sz in 
         let _ = lseek fd 0 SEEK_SET in
         let _ = read  fd buffer 0 sz in 
         close fd;
-        buffer
+        cb buffer;
+        result
         
     let exec code callback =
         let lexbuf = Lexing.from_string code in
-        let phrases = !Toploop.parse_use_file lexbuf in
+        let phrases = std_intercept (fun () -> !Toploop.parse_use_file lexbuf) callback in
         phrases |> List.map (fun phrase -> 
             try 
                 let phrase = Toploop.preprocess_phrase Format.str_formatter phrase in
                 let exec () = Toploop.execute_phrase true Format.str_formatter phrase |> ignore in
-                let capture = std_intercept exec in
-                callback capture;
+                std_intercept exec callback;
                 let reply = Format.flush_str_formatter () in
                 callback reply
             with _ -> ()
