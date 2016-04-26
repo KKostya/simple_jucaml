@@ -4,47 +4,84 @@ module JU = Yojson.Basic.Util
 
 module Exec = struct
     let init () =
+        let ppf = Format.str_formatter in
         (* Next line forces loading of the Topdirs module and population of toplevel directives *)
-        try Topdirs.load_file Format.str_formatter "" |> ignore with _ -> ();
-        Compenv.readenv Format.std_formatter Before_args;
-        Compenv.readenv Format.std_formatter Before_link;
+        try Topdirs.load_file ppf "" |> ignore with _ -> ();
+        Compenv.readenv ppf Before_args;
+        Compenv.readenv ppf Before_link;
         Toploop.set_paths ();
-        Toploop.initialize_toplevel_env ()
+        begin
+            try Toploop.initialize_toplevel_env ()
+            with Env.Error _ | Typetexp.Error _ as exn ->
+            Location.report_exception ppf exn; exit 2
+        end
 
-    let std_intercept (f: unit -> 'a ) (cb: string -> unit) : 'a = 
+    let bigflush () =
+        Format.pp_print_flush Format.std_formatter ();
+        Format.pp_print_flush Format.err_formatter ();
+        flush_all ()
+
+    let wrap_capture callback f =
         let open Unix in
         let fd = openfile  "capture" [ O_RDWR; O_TRUNC; O_CREAT ] 0o600  in
         let tmp_cout, tmp_cerr = dup stdout, dup stderr in
         dup2 fd stdout;
         dup2 fd stderr;
         let reset () =
-            flush_all ();
+            bigflush ();
             dup2 tmp_cout stdout;
-            dup2 tmp_cerr stderr
+            dup2 tmp_cerr stderr;
             in
-        let result = (try f () with ex -> (reset (); close fd; raise ex)) in
+        let result = try f () with ex -> begin
+            reset (); 
+            close fd; 
+            print_endline "wrap_capture exception here";
+            flush_all ();
+            raise ex
+        end in
         reset ();
         let sz = (fstat fd).st_size in
-        if sz = 0 then result else
-        let buffer = String.create sz in 
+        let buffer = Bytes.create sz in
         let _ = lseek fd 0 SEEK_SET in
-        let _ = read  fd buffer 0 sz in 
+        let _ = read  fd buffer 0 sz in
         close fd;
-        cb buffer;
-        result
-        
+        callback buffer;
+        result 
+
+
+    let wrap_exec_exn default f =
+        let snap = Btype.snapshot () in
+        try
+            f ()
+        with
+            | Sys.Break -> 
+                Btype.backtrack snap; 
+                print_endline "Keyboard interrupt.";
+                default
+            | x -> 
+                Btype.backtrack snap; 
+                print_endline "Compiler exception:";
+                flush_all ();
+                Location.report_exception Format.err_formatter x; 
+                default
+
+
     let exec code callback =
         let lexbuf = Lexing.from_string code in
-        let phrases = std_intercept (fun () -> !Toploop.parse_use_file lexbuf) callback in
+        let phrases = wrap_capture callback @@ fun () -> 
+                      wrap_exec_exn []      @@ fun () -> 
+            !Toploop.parse_use_file lexbuf
+            in
         phrases |> List.map (fun phrase -> 
             try 
-                let phrase = Toploop.preprocess_phrase Format.str_formatter phrase in
-                let exec () = Toploop.execute_phrase true Format.str_formatter phrase |> ignore in
-                std_intercept exec callback;
-                let reply = Format.flush_str_formatter () in
-                callback reply
-            with _ -> ()
-        ) |> ignore; 
+            let reply = 
+                wrap_capture callback @@ fun () -> 
+                wrap_exec_exn  ""     @@ fun () -> 
+                ignore ( Toploop.execute_phrase true Format.str_formatter phrase);
+                Format.flush_str_formatter () in
+            callback reply
+            with _ -> print_endline "Uncatched exception from execution. Bad."
+        ) |> ignore 
 end 
 
 module WireIO = struct
@@ -115,11 +152,15 @@ let handler wireio iopub mtype  =
     let content msg key = 
         msg.WireIO.content |> J.from_string |> JU.member key |> JU.to_string
         in
-    let send_to_iopub msg reply =
-        let content = J.to_string @@ J.(`Assoc [ 
-            ("name", `String "stdout"); ("text", `String reply )]) in
-        let rmsg = WireIO.mk_message wireio "stream" msg.WireIO.header content in
-        WireIO.send_msg wireio iopub rmsg
+    let send_to_iopub msg = function
+        | "" -> print_endline "Ignoring reply" 
+        | reply ->
+            print_endline ("Sending reply" ^ reply);
+            let content = J.to_string @@ J.(`Assoc [ 
+                ("name", `String "stdout"); ("text", `String reply )]) in
+            print_endline content;
+            let rmsg = WireIO.mk_message wireio "stream" msg.WireIO.header content in
+            WireIO.send_msg wireio iopub rmsg
         in
     let reply_kernel_info msg = 
         J.to_string @@ J.from_file ( Filename.concat wireio.WireIO.kerneldir "kernel_info.json")
