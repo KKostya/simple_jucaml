@@ -15,15 +15,20 @@ Native toplevel is not supported by OCaml, thus only bytecode compilation is pos
     corebuild jucaml.byte
 
 # Installation 
-Check in which directories your Jupyter looks for kernels.
+Check in which directories you can store kernels for Jupyter to find them.
 
-    python -c "import jupyter_client.kernelspec as j; print '\n'.join(j.KernelSpecManager().kernel_dirs)"
-    
-    > /home/user/.local/share/jupyter/kernels
-    > /home/user/VirtualEnv/ipython/share/jupyter/kernels
-    > /usr/local/share/jupyter/kernels
-    > /usr/share/jupyter/kernels
-    > /home/user/.ipython/kernels
+    $ jupyter --paths
+    config:
+        /home/user/.jupyter
+        /usr/etc/jupyter
+        /usr/local/etc/jupyter
+        /etc/jupyter
+    data:
+        /home/user/.local/share/jupyter
+        /usr/local/share/jupyter
+        /usr/share/jupyter
+    runtime:
+        /run/user/1000/jupyter
 
 Pick one of them and make a `jucaml` subdirectory there.
     
@@ -38,5 +43,3 @@ Finally, create a `kernel.json` with a path to the executable.
         "language": "OCaml"
     }
     EOF
-
-
