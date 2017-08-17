@@ -13,7 +13,7 @@ module Exec = struct
         begin
             try Toploop.initialize_toplevel_env ()
             with Env.Error _ | Typetexp.Error _ as exn ->
-            Location.report_exception ppf exn; exit 2
+            (* Location.report_exception ppf exn; *) exit 2
         end
 
     let bigflush () =
@@ -62,7 +62,7 @@ module Exec = struct
                 Btype.backtrack snap; 
                 print_endline "Compiler exception:";
                 flush_all ();
-                Location.report_exception Format.err_formatter x; 
+                (* Location.report_exception Format.err_formatter x; *)
                 default
 
 
@@ -91,10 +91,22 @@ module WireIO = struct
         kerneldir: string
     }
 
+    (* Utility functions *)
+    let uuid () = 
+        Uuidm.v4_gen (Random.State.make_self_init ()) () |> Uuidm.to_string
+
+    let time () = 
+        let tm = Unix.( time () |> localtime ) in
+        Printf.sprintf "%04u-%02u-%02u_%02u-%02u-%02u.000" 
+            (tm.tm_year + 1900) tm.tm_mon tm.tm_mday 
+            tm.tm_hour tm.tm_min tm.tm_sec
+
+    (* ***************** *)
+
     let create key = { 
         kerneldir  = Filename.dirname Sys.argv.(0);
         key  = Cstruct.of_string key; 
-        uuid = Core.Uuid.(to_string @@ create ()) 
+        uuid = uuid ();
     }
     
     type wire_msg = {
@@ -118,12 +130,12 @@ module WireIO = struct
 
     let mk_message t ?(metadata="{}") ?(extra=[]) htype parent_header content =
         let header = J.to_string @@ J.( `Assoc [
-                ("date"     , `String Core.Time.( to_filename_string ( now () ) Zone.local ) );
-                ("msg_id"   , `String Core.Uuid.( to_string @@ create () ) );
-                ("username" , `String "kernel");
-                ("session"  , `String t.uuid  );
-                ("msg_type" , `String htype   );
-                ("version"  , `String "1.0"   ) ]) 
+                ("date"     , `String (time ()) );
+                ("msg_id"   , `String (uuid ()) );
+                ("username" , `String "kernel"  );
+                ("session"  , `String t.uuid    );
+                ("msg_type" , `String htype     );
+                ("version"  , `String "1.0"     ) ]) 
             in 
         { header; parent_header; content; metadata; extra }
 

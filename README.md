@@ -2,17 +2,18 @@
 A very simple Jupiter kernel for OCaml
 
 # Compilation
-You'll need `Yojson`, `Nocrypto` and `ZMQ` bindings for OCaml.  It also relies
-on `Core.Time` and `Core.Uuid` packages.
+You'll need `Yojson`, `Nocrypto` and `ZMQ` bindings for OCaml.  
+Also `hex` and `uuidm` packages are needed.
 
-    opam install core
     opam install yojson
     opam install nocrypto
     opam install ZMQ
+    opam install 
+    opam install ZMQ
 
-Native toplevel is not supported by OCaml, thus only bytecode compiation is possible. 
+The project uses `jbulder` for building.  Native toplevel is not supported by OCaml, thus only bytecode compiation is possible. 
     
-    corebuild jucaml.byte
+    jbuilder build jucaml.bc
 
 # Installation 
 Execute the next line to see in which directories your Jupyter to looks for kernels

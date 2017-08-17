@@ -1,3 +1,0 @@
-<*> :package(ZMQ), package(nocrypto), package(yojson), package(hex)
-<*> :package(compiler-libs), package(compiler-libs.toplevel)
-

@@ -1,0 +1,18 @@
+(jbuild_version 1)
+
+(executable
+  ( (name jucaml)
+    (modules (jucaml))
+    (libraries 
+      ( compiler-libs 
+        compiler-libs.toplevel
+        unix
+        uuidm
+        ZMQ 
+        nocrypto
+        yojson
+        hex
+      )
+    )
+  )
+)
